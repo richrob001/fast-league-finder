@@ -1,118 +1,180 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
-import { FilterSidebar } from "@/components/FilterSidebar";
-import { LeagueCard } from "@/components/LeagueCard";
-
-const featuredLeagues = [
-  {
-    id: 1,
-    name: "Downtown Basketball League",
-    sport: "Basketball",
-    location: "Downtown Sports Center",
-    players: 48,
-    skillLevel: "Intermediate",
-    startDate: "March 15, 2025",
-    spotsLeft: 12
-  },
-  {
-    id: 2,
-    name: "Weekend Warriors Soccer",
-    sport: "Soccer",
-    location: "North Side Field",
-    players: 64,
-    skillLevel: "Beginner",
-    startDate: "March 20, 2025",
-    spotsLeft: 8
-  },
-  {
-    id: 3,
-    name: "Elite Tennis Championship",
-    sport: "Tennis",
-    location: "West End Tennis Club",
-    players: 32,
-    skillLevel: "Advanced",
-    startDate: "April 1, 2025",
-    spotsLeft: 4
-  },
-  {
-    id: 4,
-    name: "Friendly Volleyball Nights",
-    sport: "Volleyball",
-    location: "South Side Arena",
-    players: 24,
-    skillLevel: "Intermediate",
-    startDate: "March 18, 2025",
-    spotsLeft: 16
-  },
-  {
-    id: 5,
-    name: "Summer Baseball Classic",
-    sport: "Baseball",
-    location: "East District Stadium",
-    players: 56,
-    skillLevel: "Expert",
-    startDate: "April 5, 2025",
-    spotsLeft: 2
-  },
-  {
-    id: 6,
-    name: "Ice Hockey Pro League",
-    sport: "Hockey",
-    location: "Downtown Ice Rink",
-    players: 40,
-    skillLevel: "Advanced",
-    startDate: "March 25, 2025",
-    spotsLeft: 10
-  },
-];
+import { MatchCard } from "@/components/MatchCard";
+import { NewsCard } from "@/components/NewsCard";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch matches
+  const { data: matches, isLoading: matchesLoading } = useQuery({
+    queryKey: ['matches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('matches')
+        .select(`
+          *,
+          league:leagues(*),
+          home_team:teams!matches_home_team_id_fkey(*),
+          away_team:teams!matches_away_team_id_fkey(*)
+        `)
+        .order('match_date', { ascending: true })
+        .limit(20);
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch news
+  const { data: news, isLoading: newsLoading } = useQuery({
+    queryKey: ['news'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sports_news')
+        .select('*')
+        .order('published_at', { ascending: false })
+        .limit(12);
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Subscribe to realtime match updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('matches-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'matches'
+        },
+        () => {
+          toast.info('Match scores updated!');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    toast.success("Signed out successfully");
+  };
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-b from-background to-secondary/20">
       <Navbar />
       <Hero />
       
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Sidebar */}
-          <aside className="lg:col-span-1">
-            <FilterSidebar />
-          </aside>
-          
-          {/* League Grid */}
-          <div className="lg:col-span-3">
-            <div className="mb-6">
-              <h2 className="text-3xl font-bold mb-2">Featured Leagues</h2>
-              <p className="text-muted-foreground">
-                Browse through our most popular leagues and find your perfect match
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {featuredLeagues.map((league) => (
-                <LeagueCard key={league.id} {...league} />
-              ))}
-            </div>
+      <div className="container mx-auto px-4 py-12">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-bold mb-2">Live Sports</h2>
+            <p className="text-muted-foreground">
+              Real-time scores, matches, and news from around the world
+            </p>
           </div>
+          {user ? (
+            <Button variant="outline" onClick={handleSignOut}>
+              Sign Out
+            </Button>
+          ) : (
+            <Button onClick={() => navigate("/auth")}>
+              Sign In
+            </Button>
+          )}
         </div>
-      </main>
 
-      {/* Footer */}
-      <footer className="border-t mt-20">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="text-sm text-muted-foreground">
-              © 2025 FastLeague. All rights reserved.
-            </div>
-            <div className="flex gap-6 text-sm">
-              <a href="#" className="hover:text-primary transition-colors">Privacy</a>
-              <a href="#" className="hover:text-primary transition-colors">Terms</a>
-              <a href="#" className="hover:text-primary transition-colors">Contact</a>
-            </div>
-          </div>
-        </div>
-      </footer>
+        <Tabs defaultValue="matches" className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="matches">Matches</TabsTrigger>
+            <TabsTrigger value="news">News</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="matches" className="mt-6">
+            {matchesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : matches && matches.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {matches.map((match: any) => (
+                  <MatchCard
+                    key={match.id}
+                    homeTeam={match.home_team}
+                    awayTeam={match.away_team}
+                    homeScore={match.home_score}
+                    awayScore={match.away_score}
+                    status={match.status}
+                    matchDate={match.match_date}
+                    venue={match.venue}
+                    league={match.league}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No matches available yet. Check back soon!</p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="news" className="mt-6">
+            {newsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : news && news.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {news.map((article: any) => (
+                  <NewsCard
+                    key={article.id}
+                    title={article.title}
+                    description={article.description}
+                    imageUrl={article.image_url}
+                    url={article.url}
+                    publishedAt={article.published_at}
+                    source={article.source}
+                    sport={article.sport}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No news available yet. Check back soon!</p>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 };

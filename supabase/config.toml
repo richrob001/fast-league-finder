@@ -1,1 +1,10 @@
 project_id = "psecfzejcrtwvjcgwypi"
+
+[functions.fetch-matches]
+verify_jwt = false
+
+[functions.fetch-news]
+verify_jwt = false
+
+[functions.update-live-scores]
+verify_jwt = false
