@@ -5,6 +5,7 @@ import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
 import { MatchCard } from "@/components/MatchCard";
 import { NewsCard } from "@/components/NewsCard";
+import { LeagueCard } from "@/components/LeagueCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
@@ -26,6 +27,21 @@ const Index = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Fetch leagues
+  const { data: leagues, isLoading: leaguesLoading } = useQuery({
+    queryKey: ['leagues'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('leagues')
+        .select('*')
+        .order('name', { ascending: true })
+        .limit(20);
+
+      if (error) throw error;
+      return data;
+    },
+  });
 
   // Fetch matches
   const { data: matches, isLoading: matchesLoading } = useQuery({
@@ -113,11 +129,37 @@ const Index = () => {
           )}
         </div>
 
-        <Tabs defaultValue="matches" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs defaultValue="leagues" className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsTrigger value="leagues">Leagues</TabsTrigger>
             <TabsTrigger value="matches">Matches</TabsTrigger>
             <TabsTrigger value="news">News</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="leagues" className="mt-6">
+            {leaguesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : leagues && leagues.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {leagues.map((league: any) => (
+                  <LeagueCard
+                    key={league.id}
+                    id={league.id}
+                    name={league.name}
+                    sport={league.sport}
+                    country={league.country}
+                    logo_url={league.logo_url}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No leagues available yet. Check back soon!</p>
+              </div>
+            )}
+          </TabsContent>
 
           <TabsContent value="matches" className="mt-6">
             {matchesLoading ? (
