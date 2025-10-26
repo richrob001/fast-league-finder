@@ -17,83 +17,110 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Fetching matches from API-SPORTS...');
+    console.log('Fetching matches from Sofascore API...');
 
-    // Fetch live and upcoming matches for popular leagues
-    const leagueIds = [39, 140, 135, 61, 2]; // Premier League, La Liga, Serie A, Ligue 1, Champions League
+    // Popular tournament IDs - Premier League, La Liga, Serie A, Champions League, Bundesliga
+    const tournamentIds = [17, 8, 23, 7, 35]; 
     
-    for (const leagueId of leagueIds) {
-      const response = await fetch(
-        `https://api-football-v1.p.rapidapi.com/v3/fixtures?league=${leagueId}&season=2024&next=10`,
-        {
-          headers: {
-            'X-RapidAPI-Key': RAPIDAPI_KEY!,
-            'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
+    for (const tournamentId of tournamentIds) {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const response = await fetch(
+          `https://sofascore.p.rapidapi.com/tournaments/get-scheduled-events?tournamentId=${tournamentId}&date=${today}`,
+          {
+            headers: {
+              'x-rapidapi-host': 'sofascore.p.rapidapi.com',
+              'x-rapidapi-key': RAPIDAPI_KEY!,
+            },
           }
+        );
+
+        if (!response.ok) {
+          console.error(`Failed to fetch matches for tournament ${tournamentId}: ${response.status}`);
+          continue;
         }
-      );
 
-      if (!response.ok) {
-        console.error(`Failed to fetch matches for league ${leagueId}`);
-        continue;
-      }
+        const data = await response.json();
+        
+        if (!data.events || !Array.isArray(data.events)) {
+          console.log(`No events found for tournament ${tournamentId}`);
+          continue;
+        }
 
-      const data = await response.json();
-      console.log(`Fetched ${data.response?.length || 0} matches for league ${leagueId}`);
+        console.log(`Fetched ${data.events.length} matches for tournament ${tournamentId}`);
 
-      // Process and store matches
-      for (const fixture of data.response || []) {
-        // Upsert league
-        const { data: league } = await supabase
-          .from('leagues')
-          .upsert({
-            external_id: fixture.league.id.toString(),
-            name: fixture.league.name,
-            sport: 'football',
-            country: fixture.league.country,
-            logo_url: fixture.league.logo,
-            season: fixture.league.season.toString()
-          }, { onConflict: 'external_id' })
-          .select()
-          .single();
+        for (const event of data.events) {
+          // Upsert league
+          const { data: league } = await supabase
+            .from('leagues')
+            .upsert({
+              external_id: event.tournament.uniqueTournament?.id?.toString() || event.tournament.id.toString(),
+              name: event.tournament.uniqueTournament?.name || event.tournament.name,
+              country: event.tournament.category?.name || 'International',
+              logo_url: `https://api.sofascore.com/api/v1/unique-tournament/${event.tournament.uniqueTournament?.id || event.tournament.id}/image`,
+              season: event.season?.year?.toString() || new Date().getFullYear().toString(),
+              sport: 'football',
+            }, {
+              onConflict: 'external_id',
+              ignoreDuplicates: false,
+            })
+            .select()
+            .single();
 
-        // Upsert teams
-        const { data: homeTeam } = await supabase
-          .from('teams')
-          .upsert({
-            external_id: fixture.teams.home.id.toString(),
-            name: fixture.teams.home.name,
-            logo_url: fixture.teams.home.logo
-          }, { onConflict: 'external_id' })
-          .select()
-          .single();
+          if (!league) continue;
 
-        const { data: awayTeam } = await supabase
-          .from('teams')
-          .upsert({
-            external_id: fixture.teams.away.id.toString(),
-            name: fixture.teams.away.name,
-            logo_url: fixture.teams.away.logo
-          }, { onConflict: 'external_id' })
-          .select()
-          .single();
+          // Upsert home team
+          const { data: homeTeam } = await supabase
+            .from('teams')
+            .upsert({
+              external_id: event.homeTeam.id.toString(),
+              name: event.homeTeam.name,
+              logo_url: `https://api.sofascore.com/api/v1/team/${event.homeTeam.id}/image`,
+              country: event.homeTeam.country?.name || null,
+            }, {
+              onConflict: 'external_id',
+              ignoreDuplicates: false,
+            })
+            .select()
+            .single();
 
-        // Upsert match
-        if (league && homeTeam && awayTeam) {
+          // Upsert away team
+          const { data: awayTeam } = await supabase
+            .from('teams')
+            .upsert({
+              external_id: event.awayTeam.id.toString(),
+              name: event.awayTeam.name,
+              logo_url: `https://api.sofascore.com/api/v1/team/${event.awayTeam.id}/image`,
+              country: event.awayTeam.country?.name || null,
+            }, {
+              onConflict: 'external_id',
+              ignoreDuplicates: false,
+            })
+            .select()
+            .single();
+
+          if (!homeTeam || !awayTeam) continue;
+
+          // Upsert match
           await supabase
             .from('matches')
             .upsert({
-              external_id: fixture.fixture.id.toString(),
+              external_id: event.id.toString(),
               league_id: league.id,
               home_team_id: homeTeam.id,
               away_team_id: awayTeam.id,
-              match_date: fixture.fixture.date,
-              status: fixture.fixture.status.short,
-              home_score: fixture.goals.home || 0,
-              away_score: fixture.goals.away || 0,
-              venue: fixture.fixture.venue.name
-            }, { onConflict: 'external_id' });
+              match_date: new Date(event.startTimestamp * 1000).toISOString(),
+              status: event.status?.type || 'notstarted',
+              venue: event.venue?.stadium?.name || null,
+              home_score: event.homeScore?.current || 0,
+              away_score: event.awayScore?.current || 0,
+            }, {
+              onConflict: 'external_id',
+              ignoreDuplicates: false,
+            });
         }
+      } catch (error) {
+        console.error(`Failed to fetch matches for tournament ${tournamentId}:`, error instanceof Error ? error.message : error);
       }
     }
 

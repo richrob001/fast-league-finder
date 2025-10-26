@@ -12,51 +12,53 @@ serve(async (req) => {
   }
 
   try {
-    const NEWSAPI_KEY = Deno.env.get('NEWSAPI_KEY');
+    const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Fetching sports news from NewsAPI...');
+    console.log('Fetching sports news from Sofascore...');
 
-    const sportsCategories = ['football', 'basketball', 'tennis', 'baseball', 'soccer'];
-    
-    for (const sport of sportsCategories) {
-      const response = await fetch(
-        `https://newsapi.org/v2/everything?q=${sport}&sortBy=publishedAt&language=en&pageSize=20`,
-        {
-          headers: {
-            'X-Api-Key': NEWSAPI_KEY!
-          }
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`Failed to fetch news for ${sport}`);
-        continue;
+    const response = await fetch(
+      'https://sofascore.p.rapidapi.com/news/list',
+      {
+        headers: {
+          'x-rapidapi-host': 'sofascore.p.rapidapi.com',
+          'x-rapidapi-key': RAPIDAPI_KEY!,
+        },
       }
+    );
 
-      const data = await response.json();
-      console.log(`Fetched ${data.articles?.length || 0} articles for ${sport}`);
+    if (!response.ok) {
+      throw new Error(`Sofascore API request failed: ${response.status}`);
+    }
 
-      // Store news articles
-      for (const article of data.articles || []) {
-        await supabase
-          .from('sports_news')
-          .upsert({
-            title: article.title,
-            description: article.description,
-            content: article.content,
-            url: article.url,
-            image_url: article.urlToImage,
-            published_at: article.publishedAt,
-            source: article.source.name,
-            sport: sport
-          }, { 
-            onConflict: 'url',
-            ignoreDuplicates: true 
-          });
-      }
+    const data = await response.json();
+
+    if (!data.data || !Array.isArray(data.data)) {
+      throw new Error('Invalid response format from Sofascore API');
+    }
+
+    console.log(`Fetched ${data.data.length} news articles`);
+
+    for (const article of data.data) {
+      if (!article.title) continue;
+
+      await supabase
+        .from('sports_news')
+        .upsert({
+          title: article.title,
+          description: article.subtitle || article.title,
+          content: article.body || article.subtitle,
+          url: article.link || `https://www.sofascore.com/news/${article.id}`,
+          image_url: article.image ? `https://img.sofascore.com${article.image}` : null,
+          published_at: new Date(article.published * 1000).toISOString(),
+          source: 'Sofascore',
+          sport: article.sport?.name || 'football',
+        }, {
+          onConflict: 'url',
+          ignoreDuplicates: true,
+        });
     }
 
     return new Response(
