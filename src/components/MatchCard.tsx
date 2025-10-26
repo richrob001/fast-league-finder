@@ -37,56 +37,60 @@ export const MatchCard = ({
   const isFinished = status === "FT" || status === "AET" || status === "PEN";
 
   return (
-    <Card className="hover:shadow-lg transition-all">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+    <Card className="hover:bg-card/80 transition-all border-border bg-card">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-4">
+          {/* League logo */}
+          <div className="flex flex-col items-center gap-1">
             {league.logo_url && (
-              <img src={league.logo_url} alt={league.name} className="w-6 h-6 object-contain" />
+              <img src={league.logo_url} alt={league.name} className="w-8 h-8 object-contain" />
             )}
-            <span className="text-sm font-medium text-muted-foreground">{league.name}</span>
           </div>
-          <Badge variant={isLive ? "destructive" : isFinished ? "secondary" : "default"}>
-            {isLive ? "LIVE" : status}
-          </Badge>
+
+          {/* Teams */}
+          <div className="flex-1 space-y-2">
+            {/* Home Team */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-1">
+                {homeTeam.logo_url && (
+                  <img src={homeTeam.logo_url} alt={homeTeam.name} className="w-6 h-6 object-contain" />
+                )}
+                <span className="text-sm font-medium">{homeTeam.name}</span>
+              </div>
+              <span className="text-lg font-bold ml-4">{homeScore}</span>
+            </div>
+
+            {/* Away Team */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-1">
+                {awayTeam.logo_url && (
+                  <img src={awayTeam.logo_url} alt={awayTeam.name} className="w-6 h-6 object-contain" />
+                )}
+                <span className="text-sm font-medium">{awayTeam.name}</span>
+              </div>
+              <span className="text-lg font-bold ml-4">{awayScore}</span>
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="flex flex-col items-end gap-2">
+            <Badge variant={isLive ? "destructive" : isFinished ? "secondary" : "default"} className="text-xs">
+              {isLive ? "LIVE" : status}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {format(new Date(matchDate), "HH:mm")}
+            </span>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {/* Home Team */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
-              {homeTeam.logo_url && (
-                <img src={homeTeam.logo_url} alt={homeTeam.name} className="w-10 h-10 object-contain" />
-              )}
-              <span className="font-semibold">{homeTeam.name}</span>
-            </div>
-            <span className="text-2xl font-bold">{homeScore}</span>
-          </div>
-
-          {/* Away Team */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
-              {awayTeam.logo_url && (
-                <img src={awayTeam.logo_url} alt={awayTeam.name} className="w-10 h-10 object-contain" />
-              )}
-              <span className="font-semibold">{awayTeam.name}</span>
-            </div>
-            <span className="text-2xl font-bold">{awayScore}</span>
-          </div>
-        </div>
-
-        <div className="mt-4 pt-4 border-t space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="h-4 w-4" />
-            <span>{format(new Date(matchDate), "PPp")}</span>
-          </div>
-          {venue && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4" />
+        {venue && (
+          <div className="mt-2 pt-2 border-t border-border">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <MapPin className="h-3 w-3" />
               <span>{venue}</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
